@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Ordinal Linear Embedding</title>
+<style>
+html, body {
+    margin: 0;
+    overflow: hidden;
+    background: #111;
+    color: white;
+    font-family: monospace;
+    touch-action: none;
+}
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/decimal.js/10.4.3/decimal.min.js"></script>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resize);
+resize();
+
+// =====================
+// STATE
+// =====================
+let zoom = new Decimal(1000);
+let offsetX = new Decimal(0);
+
+// =====================
+// COORDINATES
+// =====================
+function worldToScreen(x) {
+    return x.plus(offsetX)
+            .times(zoom)
+            .plus(canvas.width / 2)
+            .toNumber();
+}
+
+function screenToWorld(x) {
+    return new Decimal(x)
+        .minus(canvas.width / 2)
+        .div(zoom)
+        .minus(offsetX);
+}
+
+// =====================
+// MOUSE CONTROLS
+// =====================
+let mouseDown = false;
+let lastX = 0;
+let lastY = 0;
+
+canvas.addEventListener("mousedown", e => {
+    mouseDown = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+});
+
+window.addEventListener("mouseup", () => mouseDown = false);
+
+window.addEventListener("mousemove", e => {
+    if (!mouseDown) return;
+
+    const dx = new Decimal(e.clientX - lastX);
+    const dy = new Decimal(e.clientY - lastY);
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+
+    // PAN
+    offsetX = offsetX.plus(dx.div(zoom));
+
+    // ZOOM (vertical drag)
+    const zoomFactor = new Decimal(1).plus(dy.neg().times(0.005));
+
+    const centerScreen = new Decimal(canvas.width / 2);
+    const centerWorld = screenToWorld(centerScreen);
+
+    zoom = zoom.times(zoomFactor);
+    if (zoom.lte(0)) zoom = new Decimal(1);
+
+    offsetX = offsetX.plus(centerWorld.minus(screenToWorld(centerScreen)));
+});
+
+// =====================
+// TOUCH CONTROLS
+// =====================
+let touchMode = null;
+let lastTouchX = null;
+let lastDist = null;
+
+canvas.addEventListener("touchstart", e => {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+        touchMode = "pan";
+        lastTouchX = e.touches[0].clientX;
+    }
+    if (e.touches.length === 2) {
+        touchMode = "zoom";
+        lastDist = getDist(e.touches);
+    }
+}, { passive:false });
+
+canvas.addEventListener("touchmove", e => {
+    e.preventDefault();
+
+    if (touchMode === "pan" && e.touches.length === 1) {
+        const dx = new Decimal(e.touches[0].clientX - lastTouchX);
+        lastTouchX = e.touches[0].clientX;
+        offsetX = offsetX.plus(dx.div(zoom));
+    }
+
+    if (touchMode === "zoom" && e.touches.length === 2) {
+        const newDist = getDist(e.touches);
+        const factor = new Decimal(newDist).div(lastDist);
+
+        const centerScreen = new Decimal(
+            (e.touches[0].clientX + e.touches[1].clientX)/2
+        );
+
+        const centerWorld = screenToWorld(centerScreen);
+
+        zoom = zoom.times(factor);
+        if (zoom.lte(0)) zoom = new Decimal(1);
+
+        offsetX = offsetX.plus(centerWorld.minus(screenToWorld(centerScreen)));
+
+        lastDist = newDist;
+    }
+}, { passive:false });
+
+canvas.addEventListener("touchend", () => {
+    touchMode = null;
+    lastDist = null;
+});
+
+function getDist(t) {
+    const dx = t[0].clientX - t[1].clientX;
+    const dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx*dx + dy*dy);
+}
+
+// =====================
+// ORDINAL ENGINE (UNCHANGED)
+// =====================
+function getEpsilon() {
+  return Decimal.pow(10, -Decimal.precision + 4);
+}
+
+function getordinal(xInput) {
+  let x = new Decimal(xInput);
+  if (x.lte(0)) return [new Decimal(0)];
+
+  const ln3 = new Decimal(3).ln();
+  let dimension = x.ln().div(ln3).floor().toNumber();
+
+  let coefficient = Array(dimension + 1)
+    .fill(null)
+    .map(() => new Decimal(0));
+
+  for (let i = dimension; i >= 0; i--) {
+    const pow3 = new Decimal(3).pow(i + 1);
+    const inside = new Decimal(1).minus(x.div(pow3));
+
+    const k = inside.ln()
+      .div(new Decimal(2).div(3).ln())
+      .plus(getEpsilon())
+      .floor();
+
+    coefficient[i] = k;
+
+    const Lk = pow3.mul(
+      new Decimal(1).minus(
+        new Decimal(2).div(3).pow(k)
+      )
+    );
+
+    x = x.minus(Lk).mul(
+      new Decimal(3).div(2).pow(k)
+    );
+  }
+
+  return coefficient;
+}
+
+function getpoint(coeff) {
+  let x = new Decimal(0);
+
+  for (let i = 0; i < coeff.length; i++) {
+    const k = new Decimal(coeff[i]);
+    const pow3 = new Decimal(3).pow(i + 1);
+
+    const Lk = pow3.mul(
+      new Decimal(1).minus(
+        new Decimal(2).div(3).pow(k)
+      )
+    );
+
+    x = x.mul(new Decimal(2).div(3).pow(k)).plus(Lk);
+  }
+  return x;
+}
+
+function arraysEqual(a,b){
+  if(!a||!b||a.length!==b.length) return false;
+  for(let i=0;i<a.length;i++)
+    if(!new Decimal(a[i]).eq(b[i])) return false;
+  return true;
+}
+
+function getdrawing(startInput,endInput,steps){
+  const start=new Decimal(startInput);
+  const end=new Decimal(endInput);
+  const stepsDec=new Decimal(steps);
+
+  let result=[];
+  let lastOrdinal=null;
+
+  for(let s=0;s<=steps;s++){
+    const ratio=new Decimal(s).div(stepsDec);
+    const x=start.plus(end.minus(start).mul(ratio));
+    const ordinal=getordinal(x);
+
+    if(!arraysEqual(lastOrdinal,ordinal)){
+      const pos=getpoint(ordinal);
+      result.push([ordinal,pos]);
+      lastOrdinal=ordinal;
+    }
+  }
+  return result;
+}
+
+function toOrdinal(coeff){
+  let parts=[];
+  for(let i=coeff.length-1;i>=0;i--){
+    const k=coeff[i];
+    if(!k.eq(0)){
+      if(i===0) parts.push(k.toString());
+      else if(i===1) parts.push(k.eq(1)?"ω":k+"ω");
+      else parts.push(k.eq(1)?"ω^"+i:k+"ω^"+i);
+    }
+  }
+  return parts.length?parts.join(" + "):"0";
+}
+
+// =====================
+// FPS COUNTER
+// =====================
+let fps=0,lastTime=performance.now(),frames=0;
+
+// =====================
+// DRAW
+// =====================
+  let iterations = 2;
+function draw(){
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    const midY=canvas.height/2;
+
+    ctx.strokeStyle="white";
+    ctx.beginPath();
+    ctx.moveTo(0,midY);
+    ctx.lineTo(canvas.width,midY);
+    ctx.stroke();
+
+    const worldLeft=screenToWorld(0);
+    const worldRight=screenToWorld(canvas.width);
+
+    // draw 0 manually
+    const zeroX=worldToScreen(new Decimal(0));
+    ctx.strokeStyle="#00ffff";
+    ctx.beginPath();
+    ctx.moveTo(zeroX,midY-15);
+    ctx.lineTo(zeroX,midY+15);
+    ctx.stroke();
+    ctx.fillText("0",zeroX,midY+20);
+
+    const start=Decimal.max(new Decimal(1),worldLeft);
+    const end=worldRight;
+
+    if(end.gt(start)){
+        const steps=canvas.width*2;
+        const drawing=getdrawing(start,end,Math.floor(canvas.width/iterations));
+
+        for(let item of drawing){
+            const ord=item[0];
+            const pos=item[1];
+            const sx=worldToScreen(pos);
+            if(sx<-50||sx>canvas.width+50) continue;
+
+            ctx.strokeStyle="white";
+            ctx.beginPath();
+            ctx.moveTo(sx,midY-10);
+            ctx.lineTo(sx,midY+10);
+            ctx.stroke();
+            ctx.fillText(toOrdinal(ord),sx,midY+18);
+        }
+    }
+
+    // ===== LABEL =====
+    ctx.fillStyle="white";
+    ctx.fillText("Zoom: "+zoom.toPrecision(6),20,20);
+    ctx.fillText("World: ["+
+        worldLeft.toPrecision(4)+" , "+
+        worldRight.toPrecision(4)+"]",20,40);
+    ctx.fillText("FPS: "+fps,20,60);
+}
+
+// =====================
+function loop(){
+    frames++;
+    const now=performance.now();
+    if(now-lastTime>=1000){
+        fps=frames;
+        frames=0;
+        lastTime=now;
+    }
+    draw();
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
