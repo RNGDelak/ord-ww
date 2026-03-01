@@ -54,7 +54,7 @@ resize();
 // STATE
 // =====================
 let zoom = new Decimal(1000);
-let offsetX = new Decimal(0);
+let offsetX = new Decimal(-1);
 
 let isInteracting = false;
 let renderVersion = 0;
@@ -135,6 +135,69 @@ window.addEventListener("mousemove", e => {
 
     offsetX = offsetX.plus(centerWorld.minus(screenToWorld(centerScreen)));
 });
+
+    // =====================
+    // TOUCH SUPPORT
+    // =====================
+
+    let touchActive = false;
+
+    canvas.addEventListener("touchstart", e => {
+        if (e.touches.length !== 1) return;
+
+        e.preventDefault();
+
+        const touch = e.touches[0];
+
+        touchActive = true;
+        lastX = touch.clientX;
+        lastY = touch.clientY;
+
+        startInteraction();
+    }, { passive: false });
+
+    canvas.addEventListener("touchmove", e => {
+        if (!touchActive || e.touches.length !== 1) return;
+
+        e.preventDefault();
+
+        const touch = e.touches[0];
+
+        const dx = new Decimal(touch.clientX - lastX);
+        const dy = new Decimal(touch.clientY - lastY);
+
+        lastX = touch.clientX;
+        lastY = touch.clientY;
+
+        // Horizontal pan (same as mouse)
+        offsetX = offsetX.plus(dx.div(zoom));
+
+        // Vertical drag = zoom
+        const zoomFactor = new Decimal(1).plus(dy.neg().times(0.005));
+
+        const centerScreen = new Decimal(canvas.width / 2);
+        const centerWorld = screenToWorld(centerScreen);
+
+        zoom = zoom.times(zoomFactor);
+        if (zoom.lte(0)) zoom = new Decimal(1);
+
+        offsetX = offsetX.plus(
+            centerWorld.minus(screenToWorld(centerScreen))
+        );
+
+    }, { passive: false });
+
+    canvas.addEventListener("touchend", e => {
+        if (!touchActive) return;
+
+        touchActive = false;
+        endInteraction();
+    });
+
+    canvas.addEventListener("touchcancel", () => {
+        touchActive = false;
+        endInteraction();
+    });
 
 // =====================
 // PREVIEW RENDER (50 STEPS)
