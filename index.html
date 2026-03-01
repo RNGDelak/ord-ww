@@ -17,9 +17,9 @@ canvas { display: block; }
 
 #ui {
     position: fixed;
-    top: 10px;
+    bottom: 10px;
     left: 10px;
-    background: rgba(0,0,0,0.6);
+    background: rgba(0,0,0,0);
     padding: 10px 14px;
     border-radius: 8px;
     z-index: 10;
@@ -29,6 +29,7 @@ canvas { display: block; }
 <body>
 
 <div id="ui">
+  <div><span id="ord" style="font-size: 20px;font-family: serif;"></span></div>
   <div>Zoom: <span id="zoomDisplay"></span></div>
   <div>FPS: <span id="fpsDisplay"></span></div>
   <div>World Position: <span id="worldDisplay"></span></div>
@@ -141,8 +142,7 @@ window.addEventListener("mousemove", e => {
 function renderPreview(){
 
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    drawAxis();
-
+    marker();
     const worldLeft = screenToWorld(0);
     const worldRight = screenToWorld(canvas.width);
 
@@ -166,7 +166,7 @@ function renderPreview(){
             const sx = worldToScreen(pos);
 
             if (sx > -50 && sx < canvas.width + 50) {
-                drawOrdinalTick(ordinal, sx);
+                drawOrdinalTick(ordinal, sx,zoom);
             }
 
             lastOrdinal = ordinal;
@@ -183,8 +183,6 @@ function startRender(){
     const currentVersion = renderVersion;
 
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    drawAxis();
-
     const worldLeft = screenToWorld(0);
     const worldRight = screenToWorld(canvas.width);
 
@@ -216,7 +214,7 @@ function startRender(){
                 const sx = worldToScreen(pos);
 
                 if (sx > -50 && sx < canvas.width + 50) {
-                    drawOrdinalTick(ordinal, sx);
+                    drawOrdinalTick(ordinal, sx,zoom);
                 }
 
                 lastOrdinal = ordinal;
@@ -299,6 +297,34 @@ function arraysEqual(a,b){
   return true;
 }
 
+    function toOrdinalfine(coeff) {
+      let parts = [];
+
+      for (let i = coeff.length - 1; i >= 0; i--) {
+        const k = parseInt(coeff[i]);
+
+        if (k !== 0) {
+          if (i === 0) {
+            parts.push(k.toString());
+          } 
+          else if (i === 1) {
+            parts.push(k === 1 ? "ω" : k + "ω");
+          } 
+          else {
+            parts.push(
+              k === 1
+                ? "ω<sup>" + i + "</sup>"
+                : k + "ω<sup>" + i + "</sup>"
+            );
+          }
+        }
+      }
+
+      return parts.length ? parts.join(" + ") : "0";
+    }
+
+
+
 function toOrdinal(coeff){
   let parts=[];
   for(let i=coeff.length-1;i>=0;i--){
@@ -329,7 +355,7 @@ function classifyOrdinal(coeff){
     return "limit";
 }
 
-function drawOrdinalTick(ord, sx){
+function drawOrdinalTick(ord, sx,zoom){
 
     const type = classifyOrdinal(ord);
 
@@ -338,36 +364,31 @@ function drawOrdinalTick(ord, sx){
     if(type === "limit") color = "orange";
     if(type === "omegaPower") color = "yellow";
 
-    const midY = canvas.height / 2;
+    const midY = (canvas.height / canvas.width) * sx;
 
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
 
     ctx.beginPath();
-    ctx.moveTo(sx, midY - 10);
-    ctx.lineTo(sx, midY + 10);
+    ctx.moveTo(sx, midY - 15);
+    ctx.lineTo(sx, midY + 15);
     ctx.stroke();
-
-    ctx.fillText(toOrdinal(ord), sx, midY + 18);
+    ctx.font = "20px serif";
+    ctx.fillText(toOrdinal(ord), sx, midY - 23);
 }
+    function marker() {
 
-function drawAxis(){
-    const midY = canvas.height/2;
+        // Set stroke color (green)
+        ctx.strokeStyle = "rgba(0, 0, 255, 0.5)";
+        ctx.lineWidth = 2;
 
-    ctx.strokeStyle="white";
-    ctx.beginPath();
-    ctx.moveTo(0,midY);
-    ctx.lineTo(canvas.width,midY);
-    ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, 0);
+        ctx.lineTo(canvas.width / 2, canvas.height);
+        ctx.stroke();
+    }
 
-    const zeroX=worldToScreen(new Decimal(0));
-    ctx.strokeStyle="#00ffff";
-    ctx.beginPath();
-    ctx.moveTo(zeroX,midY-15);
-    ctx.lineTo(zeroX,midY+15);
-    ctx.stroke();
-    ctx.fillText("0",zeroX,midY+20);
-}
+
 
 // =====================
 // MAIN LOOP
@@ -387,9 +408,11 @@ function loop(){
     document.getElementById("zoomDisplay").textContent = zoom.toPrecision(6);
     document.getElementById("fpsDisplay").textContent = fps;
 
-    const centerWorld = screenToWorld(canvas.width/2);
+    let centerWorld = screenToWorld(canvas.width/2);
     document.getElementById("worldDisplay").textContent =
-        centerWorld.toPrecision(10);
+        centerWorld.toPrecision(3)
+    document.getElementById("ord").innerHTML  = toOrdinalfine(getordinal(Math.max(1,centerWorld)))
+
 
     if(isInteracting){
         renderPreview(); // clears every frame while dragging
