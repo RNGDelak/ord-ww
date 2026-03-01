@@ -227,8 +227,8 @@ window.addEventListener("mousemove", e => {
     function keyboardStep(){
         if (!keyboardAnimating) return;
 
-        const panSpeed = new Decimal(20).div(zoom); // pan speed scales with zoom
-        const zoomSpeed = new Decimal(0.02);        // smooth zoom rate
+        const panSpeed = new Decimal(50).div(zoom); // pan speed scales with zoom
+        const zoomSpeed = new Decimal(0.05);        // smooth zoom rate
 
         // PAN
         if (keys.ArrowLeft) {
